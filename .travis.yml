@@ -47,6 +47,7 @@ after_failure:
   - docker logs default_cert
   - docker logs certs_single
   - docker logs certs_san
+  - docker logs certs_standalone
   - docker logs force_renew
   - docker logs permissions_default
   - docker logs permissions_custom
