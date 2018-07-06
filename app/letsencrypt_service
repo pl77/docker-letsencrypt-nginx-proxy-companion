@@ -3,7 +3,6 @@
 
 source /app/functions.sh
 
-seconds_to_wait=3600
 ACME_CA_URI="${ACME_CA_URI:-https://acme-v01.api.letsencrypt.org/directory}"
 DEFAULT_KEY_SIZE=4096
 REUSE_ACCOUNT_KEYS="$(lc ${REUSE_ACCOUNT_KEYS:-true})"
@@ -255,23 +254,7 @@ function update_certs {
 
     cleanup_links && should_reload_nginx='true'
 
-    [[ "$should_reload_nginx" == 'true' ]] && reload_nginx
+    ([[ "$should_reload_nginx" == 'true' ]] && reload_nginx) || return 0
 }
 
-# Allow the script functions to be sourced without starting the Service Loop.
-if [ "${1}" == "--source-only" ]; then
-  return 0
-fi
-
-pid=
-# Service Loop: When this script exits, start it again.
-trap '[[ $pid ]] && kill $pid; exec $0' EXIT
-trap 'trap - EXIT' INT TERM
-
-update_certs
-
-# Wait some amount of time
-echo "Sleep for ${seconds_to_wait}s"
-sleep $seconds_to_wait & pid=$!
-wait
-pid=
+update_certs "$@"
