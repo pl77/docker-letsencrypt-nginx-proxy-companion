@@ -1,0 +1,3 @@
+#!/bin/bash
+
+/app/letsencrypt_service > /dev/stdout 2> /dev/stderr

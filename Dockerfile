@@ -44,6 +44,7 @@ RUN chmod +rx /app/install_simp_le.sh \
     && rm -f /app/install_simp_le.sh
 
 COPY /app/ /app/
+RUN mv /app/letsencrypt_renew /etc/periodic/hourly/letsencrypt_renew
 
 WORKDIR /app
 
