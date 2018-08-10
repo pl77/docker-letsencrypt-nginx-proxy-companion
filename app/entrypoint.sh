@@ -2,8 +2,8 @@
 # shellcheck disable=SC2155
 
 set -u
-
 source /app/functions.sh
+[[ "$(get_log_level)" -ge 5 ]] && set -x
 
 function check_deprecated_env_var {
     if [[ -n "${ACME_TOS_HASH:-}" ]]; then

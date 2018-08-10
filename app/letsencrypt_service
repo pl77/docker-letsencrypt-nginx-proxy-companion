@@ -2,6 +2,7 @@
 # shellcheck disable=SC2120
 
 source /app/functions.sh
+[[ "$(get_log_level)" -ge 5 ]] && set -x
 
 seconds_to_wait=3600
 ACME_CA_URI="${ACME_CA_URI:-https://acme-v01.api.letsencrypt.org/directory}"
