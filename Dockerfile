@@ -21,8 +21,7 @@ FROM alpine:3.9
 
 LABEL maintainer="Yves Blusseau <90z7oey02@sneakemail.com> (@blusseau)"
 
-ENV DEBUG=false \
-    DOCKER_HOST=unix:///var/run/docker.sock
+ENV DOCKER_HOST=unix:///var/run/docker.sock
 
 # Install packages required by the image
 RUN apk add --update \

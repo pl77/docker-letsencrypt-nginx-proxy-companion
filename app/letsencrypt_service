@@ -15,8 +15,7 @@ function create_link {
     local -r source=${1?missing source argument}
     local -r target=${2?missing target argument}
     if [[ -f "$target" ]] && [[ "$(readlink "$target")" == "$source" ]]; then
-      set_ownership_and_permissions "$target"
-      [[ "$(lc $DEBUG)" == true ]] && echo "$target already linked to $source"
+      log --debug "$target already linked to $source"
       return 1
     else
       ln -sf "$source" "$target" \
@@ -61,7 +60,7 @@ function cleanup_links {
         symlinked_domain="${symlinked_domain%*.crt}"
         SYMLINKED_DOMAINS+=("$symlinked_domain")
     done
-    [[ "$(lc $DEBUG)" == true ]] && echo "Symlinked domains: ${SYMLINKED_DOMAINS[*]}"
+    log --debug "symlinked domains: ${SYMLINKED_DOMAINS[*]}"
 
     # Create an array containing domains that are considered
     # enabled (ie present on /app/letsencrypt_service_data).
@@ -75,7 +74,7 @@ function cleanup_links {
         ENABLED_DOMAINS+=("$domain")
       done
     done
-    [[ "$(lc $DEBUG)" == true ]] && echo "Enabled domains: ${ENABLED_DOMAINS[*]}"
+    log --debug "enabled domains: ${ENABLED_DOMAINS[*]}"
 
     # Create an array containing only domains for which a symlinked private key exists
     # in /etc/nginx/certs but that no longer have a corresponding LETSENCRYPT_HOST set
@@ -86,28 +85,28 @@ function cleanup_links {
                                              "${ENABLED_DOMAINS[@]}" \
                                              | tr ' ' '\n' | sort | uniq -u)
     fi
-    [[ "$(lc $DEBUG)" == true ]] && echo "Disabled domains: ${DISABLED_DOMAINS[*]}"
+    log --debug "disabled domains: ${DISABLED_DOMAINS[*]}"
 
 
     # Remove disabled domains symlinks if present.
     # Return 1 if nothing was removed and 0 otherwise.
     if [[ ${#DISABLED_DOMAINS[@]} -gt 0 ]]; then
-      [[ "$(lc $DEBUG)" == true ]] && echo "Some domains are disabled :"
+      log --debug "some domains are disabled :"
       for disabled_domain in "${DISABLED_DOMAINS[@]}"; do
-          [[ "$(lc $DEBUG)" == true ]] && echo "Checking domain ${disabled_domain}"
+          log --debug "checking domain ${disabled_domain}"
           cert_folder="$(readlink -f /etc/nginx/certs/${disabled_domain}.crt)"
           # If the dotfile is absent, skip domain.
           if [[ ! -e "${cert_folder%/*}/.companion" ]]; then
-              [[ "$(lc $DEBUG)" == true ]] && echo "No .companion file found in ${cert_folder}. ${disabled_domain} is not managed by letsencrypt-nginx-proxy-companion. Skipping domain."
+              log --debug "no .companion file found in ${cert_folder}. ${disabled_domain} is not managed by letsencrypt-nginx-proxy-companion. Skipping domain."
               continue
           else
-              [[ "$(lc $DEBUG)" == true ]] && echo "${disabled_domain} is managed by letsencrypt-nginx-proxy-companion. Removing unused symlinks."
+              log --debug "${disabled_domain} is managed by letsencrypt-nginx-proxy-companion. Removing unused symlinks."
           fi
 
           for extension in .crt .key .dhparam.pem .chain.pem; do
               file="${disabled_domain}${extension}"
               if [[ -n "${file// }" ]] && [[ -L "/etc/nginx/certs/${file}" ]]; then
-                  [[ "$(lc $DEBUG)" == true ]] && echo "Removing /etc/nginx/certs/${file}"
+                  log --debug "removing /etc/nginx/certs/${file}"
                   rm -f "/etc/nginx/certs/${file}"
               fi
           done
@@ -174,7 +173,7 @@ function update_certs {
             account_alias=default
         fi
 
-        [[ "$(lc $DEBUG)" == true ]] && params_d_str+=" -v"
+        [[ "$(get_log_level)" -ge 4 ]] && params_d_str+=" -v"
         [[ $REUSE_PRIVATE_KEYS == true ]] && params_d_str+=" --reuse_key"
 
         min_validity="LETSENCRYPT_${cid}_MIN_VALIDITY"
@@ -203,7 +202,7 @@ function update_certs {
         # make it root readable only and make it the cwd
         mkdir -p "$certificate_dir"
         set_ownership_and_permissions "$certificate_dir"
-        pushd "$certificate_dir" || return
+        pushd "$certificate_dir" > /dev/null || return
 
         for domain in "${!hosts_array}"; do
             # Add all the domains to certificate
@@ -230,7 +229,7 @@ function update_certs {
             fi
         fi
 
-        echo "Creating/renewal $base_domain certificates... (${hosts_array_expanded[*]})"
+        log --info "creating/renewing $base_domain certificates... (${hosts_array_expanded[*]})"
         /usr/bin/simp_le \
             -f account_key.json -f key.pem -f chain.pem -f fullchain.pem -f cert.pem \
             $params_d_str \
@@ -250,7 +249,7 @@ function update_certs {
             fi
         fi
 
-        popd || return
+        popd > /dev/null || return
 
         if [[ $simp_le_return -ne 2 ]]; then
           for domain in "${!hosts_array}"; do
@@ -280,7 +279,7 @@ function update_certs {
         # Restart container if certs are updated and the respective environmental variable is set
         restart_container_var="LETSENCRYPT_${cid}_RESTART_CONTAINER"
         if [[ $(lc "${!restart_container_var:-}") == true ]] && [[ "$should_restart_container" == 'true' ]]; then
-            echo "Restarting container (${cid})..."
+            log --info "restarting container (${cid})..."
             docker_restart "${cid}"
         fi
 
@@ -304,7 +303,7 @@ trap 'trap - EXIT' INT TERM
 update_certs
 
 # Wait some amount of time
-echo "Sleep for ${seconds_to_wait}s"
+log --info "sleeping for ${seconds_to_wait}s"
 sleep $seconds_to_wait & pid=$!
 wait
 pid=

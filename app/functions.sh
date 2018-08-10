@@ -1,6 +1,113 @@
 #!/bin/bash
 # shellcheck disable=SC2155
 
+## Logging
+function date_fmt {
+    date "+%Y/%m/%d %T"
+}
+
+function get_log_level {
+    local container_log_level
+
+    # Get container log level from environment variable
+    case "${LOG_LEVEL:-3}" in
+      1|[eE]rror)
+      container_log_level=1
+      ;;
+
+      2|[wW]arning)
+      container_log_level=2
+      ;;
+
+      3|[iI]nfo)
+      container_log_level=3
+      ;;
+
+      4|[dD]ebug)
+      container_log_level=4
+      ;;
+
+      5|[tT]race)
+      container_log_level=5
+      ;;
+
+      *) # Default to log level 3 / Info for unknown values
+      container_log_level=3
+      ;;
+    esac
+
+    # Ascending compatibility with the old env var
+    [[ "$(lc "${DEBUG:-false}")" == true ]] && container_log_level=4
+
+    echo "$container_log_level"
+}
+
+function log {
+    local container_log_level
+    local message_log_level
+    local message_log_type
+    local -a messages
+
+    # Argument parser
+    while [[ $# -gt 0 ]]; do
+      flag="$1"
+      case $flag in
+        -1|-e|--error)
+        message_log_level=1
+        message_log_type='Error'
+        shift
+        ;;
+
+        -2|-w|--warning)
+        message_log_level=2
+        message_log_type='Warning'
+        shift
+        ;;
+
+        -3|-i|--info)
+        message_log_level=3
+        message_log_type='Info'
+        shift
+        ;;
+
+        -4|-d|--debug)
+        message_log_level=4
+        message_log_type='Debug'
+        shift
+        ;;
+
+        *)
+        messages+=("$1")
+        shift
+        ;;
+      esac
+    done
+
+    # Get container log level
+    container_log_level="$(get_log_level)"
+
+    # Default to log level Info
+    message_log_level="${message_log_level:-3}"
+    message_log_type="${message_log_type:-Info}"
+
+    # Output logs
+    if [[ ${#messages[@]} -gt 0 ]]; then
+      case $message_log_level in
+        1)
+        [[ "$container_log_level" -ge $message_log_level ]] && echo "$(date_fmt) $message_log_type: ${messages[*]}" >&2
+        ;;
+
+        *)
+        [[ "$container_log_level" -ge $message_log_level ]] && echo "$(date_fmt) $message_log_type: ${messages[*]}"
+        ;;
+      esac
+    fi
+
+    # Avoid returning 1 due to the previous one liner check
+    return 0
+}
+
+## Location configuration
 [[ -z "${VHOST_DIR:-}" ]] && \
  declare -r VHOST_DIR=/etc/nginx/vhost.d
 [[ -z "${START_HEADER:-}" ]] && \
@@ -14,11 +121,11 @@ function check_nginx_proxy_container_run {
         if [[ $(docker_api "/containers/${_nginx_proxy_container}/json" | jq -r '.State.Status') = "running" ]];then
             return 0
         else
-            echo "$(date "+%Y/%m/%d %T") Error: nginx-proxy container ${_nginx_proxy_container} isn't running." >&2
+            log --error "nginx-proxy container ${_nginx_proxy_container} isn't running."
             return 1
         fi
     else
-        echo "$(date "+%Y/%m/%d %T") Error: could not get a nginx-proxy container ID." >&2
+        log --error "could not get a nginx-proxy container ID."
         return 1
 fi
 }
@@ -77,7 +184,7 @@ function get_self_cid {
     if [[ ${#self_cid} == 64 ]]; then
         echo "$self_cid"
     else
-        echo "$(date "+%Y/%m/%d %T"), Error: can't get my container ID !" >&2
+        log --error "can't get my container ID !"
         return 1
     fi
 }
@@ -92,7 +199,7 @@ function docker_api {
         curl_opts+=(-d "$3")
     fi
     if [[ -z "$DOCKER_HOST" ]];then
-        echo "Error DOCKER_HOST variable not set" >&2
+        log --error "DOCKER_HOST variable not set"
         return 1
     fi
     if [[ $DOCKER_HOST == unix://* ]]; then
@@ -113,7 +220,7 @@ function docker_exec {
     if [[ -n "$exec_id" && "$exec_id" != "null" ]]; then
         docker_api /exec/$exec_id/start "POST" '{"Detach": false, "Tty":false}'
     else
-        echo "$(date "+%Y/%m/%d %T"), Error: can't exec command ${cmd} in container ${id}. Check if the container is running." >&2
+        log --error "can't exec command ${cmd} in container ${id}. Check if the container is running."
         return 1
     fi
 }
@@ -189,21 +296,21 @@ function reload_nginx {
 
     if [[ -n "${_docker_gen_container:-}" ]]; then
         # Using docker-gen and nginx in separate container
-        echo "Reloading nginx docker-gen (using separate container ${_docker_gen_container})..."
+        log --info "Reloading nginx docker-gen (using separate container ${_docker_gen_container})..."
         docker_kill "${_docker_gen_container}" SIGHUP
 
         if [[ -n "${_nginx_proxy_container:-}" ]]; then
             # Reloading nginx in case only certificates had been renewed
-            echo "Reloading nginx (using separate container ${_nginx_proxy_container})..."
+            log --info "Reloading nginx (using separate container ${_nginx_proxy_container})..."
             docker_kill "${_nginx_proxy_container}" SIGHUP
         fi
     else
         if [[ -n "${_nginx_proxy_container:-}" ]]; then
-            echo "Reloading nginx proxy (${_nginx_proxy_container})..."
+            log --info "Reloading nginx proxy (${_nginx_proxy_container})..."
             docker_exec "${_nginx_proxy_container}" \
                 '[ "sh", "-c", "/app/docker-entrypoint.sh /usr/local/bin/docker-gen /app/nginx.tmpl /etc/nginx/conf.d/default.conf; /usr/sbin/nginx -s reload" ]' \
                 | sed -rn 's/^.*([0-9]{4}\/[0-9]{2}\/[0-9]{2}.*$)/\1/p'
-            [[ ${PIPESTATUS[0]} -eq 1 ]] && echo "$(date "+%Y/%m/%d %T"), Error: can't reload nginx-proxy." >&2
+            [[ ${PIPESTATUS[0]} -eq 1 ]] && log --error "can't reload nginx-proxy."
         fi
     fi
 }
@@ -217,11 +324,11 @@ function set_ownership_and_permissions {
   local d_perms="${FOLDERS_PERMS:-755}"
 
   if [[ ! "$f_perms" =~ ^[0-7]{3,4}$ ]]; then
-    echo "Warning : the provided files permission octal ($f_perms) is incorrect. Skipping ownership and permissions check."
+    log --warning "the provided files permission octal ($f_perms) is incorrect. Skipping ownership and permissions check."
     return 1
   fi
   if [[ ! "$d_perms" =~ ^[0-7]{3,4}$ ]]; then
-    echo "Warning : the provided folders permission octal ($d_perms) is incorrect. Skipping ownership and permissions check."
+    log --warning "the provided folders permission octal ($d_perms) is incorrect. Skipping ownership and permissions check."
     return 1
   fi
 
@@ -232,9 +339,9 @@ function set_ownership_and_permissions {
   elif id -u "$user" > /dev/null 2>&1; then
     # Convert the user name to numeric ID
     local user_num="$(id -u "$user")"
-    [[ "$(lc $DEBUG)" == true ]] && echo "Debug: numeric ID of user $user is $user_num."
+    log --debug "numeric ID of user $user is $user_num."
   else
-    echo "Warning: user $user not found in the container, please use a numeric user ID instead of a user name. Skipping ownership and permissions check."
+    log --warning "user $user not found in the container, please use a numeric user ID instead of a user name. Skipping ownership and permissions check."
     return 1
   fi
 
@@ -245,16 +352,16 @@ function set_ownership_and_permissions {
   elif getent group "$group" > /dev/null 2>&1; then
     # Convert the group name to numeric ID
     local group_num="$(getent group "$group" | awk -F ':' '{print $3}')"
-    [[ "$(lc $DEBUG)" == true ]] && echo "Debug: numeric ID of group $group is $group_num."
+    log --debug "numeric ID of group $group is $group_num."
   else
-    echo "Warning: group $group not found in the container, please use a numeric group ID instead of a group name. Skipping ownership and permissions check."
+    log --warning "group $group not found in the container, please use a numeric group ID instead of a group name. Skipping ownership and permissions check."
     return 1
   fi
 
   # Check and modify ownership if required.
   if [[ -e "$path" ]]; then
     if [[ "$(stat -c %u:%g "$path" )" != "$user_num:$group_num" ]]; then
-      [[ "$(lc $DEBUG)" == true ]] && echo "Debug: setting $path ownership to $user:$group."
+      log --debug "setting $path ownership to $user:$group."
       if [[ -L "$path" ]]; then
         chown -h "$user_num:$group_num" "$path"
       else
@@ -264,7 +371,7 @@ function set_ownership_and_permissions {
     # If the path is a folder, check and modify permissions if required.
     if [[ -d "$path" ]]; then
       if [[ "$(stat -c %a "$path")" != "$d_perms" ]]; then
-        [[ "$(lc $DEBUG)" == true ]] && echo "Debug: setting $path permissions to $d_perms."
+        log --debug "setting $path permissions to $d_perms."
         chmod "$d_perms" "$path"
       fi
     # If the path is a file, check and modify permissions if required.
@@ -272,19 +379,19 @@ function set_ownership_and_permissions {
       # Use different permissions for private files (private keys and ACME account keys) ...
       if [[ "$path" =~ ^.*(default\.key|key\.pem|\.json)$ ]]; then
         if [[ "$(stat -c %a "$path")" != "$f_perms" ]]; then
-          [[ "$(lc $DEBUG)" == true ]] && echo "Debug: setting $path permissions to $f_perms."
+          log --debug "setting $path permissions to $f_perms."
           chmod "$f_perms" "$path"
         fi
       # ... and for public files (certificates, chains, fullchains, DH parameters).
       else
         if [[ "$(stat -c %a "$path")" != "644" ]]; then
-          [[ "$(lc $DEBUG)" == true ]] && echo "Debug: setting $path permissions to 644."
+          log --debug "setting $path permissions to 644."
           chmod "644" "$path"
         fi
       fi
     fi
   else
-    echo "Warning: $path does not exist. Skipping ownership and permissions check."
+    log --warning "$path does not exist. Skipping ownership and permissions check."
     return 1
   fi
 }

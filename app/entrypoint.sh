@@ -3,10 +3,12 @@
 
 set -u
 
+source /app/functions.sh
+
 function check_deprecated_env_var {
     if [[ -n "${ACME_TOS_HASH:-}" ]]; then
-        echo "Info: the ACME_TOS_HASH environment variable is no longer used by simp_le and has been deprecated."
-        echo "simp_le now implicitly agree to the ACME CA ToS."
+        log --info "the ACME_TOS_HASH environment variable is no longer used by simp_le and has been deprecated." \
+            "simp_le now implicitly agree to the ACME CA ToS."
     fi
 }
 
@@ -14,8 +16,8 @@ function check_docker_socket {
     if [[ $DOCKER_HOST == unix://* ]]; then
         socket_file=${DOCKER_HOST#unix://}
         if [[ ! -S $socket_file ]]; then
-            echo "Error: you need to share your Docker host socket with a volume at $socket_file" >&2
-            echo "Typically you should run your container with: '-v /var/run/docker.sock:$socket_file:ro'" >&2
+            log --error "you need to share your Docker host socket with a volume at $socket_file." \
+                "Typically you should run your container with: '-v /var/run/docker.sock:$socket_file:ro'"
             exit 1
         fi
     fi
@@ -25,19 +27,19 @@ function check_writable_directory {
     local dir="$1"
     if [[ $(get_self_cid) ]]; then
         docker_api "/containers/$(get_self_cid)/json" | jq ".Mounts[].Destination" | grep -q "^\"$dir\"$"
-        [[ $? -ne 0 ]] && echo "Warning: '$dir' does not appear to be a mounted volume."
+        [[ $? -ne 0 ]] && log --warning "'$dir' does not appear to be a mounted volume."
     else
-        echo "Warning: can't check if '$dir' is a mounted volume without self container ID."
+        log --warning "can't check if '$dir' is a mounted volume without self container ID."
     fi
     if [[ ! -d "$dir" ]]; then
-        echo "Error: can't access to '$dir' directory !" >&2
-        echo "Check that '$dir' directory is declared as a writable volume." >&2
+        log --error "can't access the '$dir' directory !" \
+            "Check that '$dir' directory is declared as a writable volume."
         exit 1
     fi
     touch $dir/.check_writable 2>/dev/null
     if [[ $? -ne 0 ]]; then
-        echo "Error: can't write to the '$dir' directory !" >&2
-        echo "Check that '$dir' directory is export as a writable volume." >&2
+        log --error "can't write to the '$dir' directory !" \
+            "Check that '$dir' directory is export as a writable volume."
         exit 1
     fi
     rm -f $dir/.check_writable
@@ -49,8 +51,8 @@ function check_dh_group {
     local DHPARAM_BITS="${DHPARAM_BITS:-2048}"
     re='^[0-9]*$'
     if ! [[ "$DHPARAM_BITS" =~ $re ]] ; then
-       echo "Error: invalid Diffie-Hellman size of $DHPARAM_BITS !" >&2
-       exit 1
+        log --error "invalid Diffie-Hellman size of $DHPARAM_BITS !"
+        exit 1
     fi
 
     # If a dhparam file is not available, use the pre-generated one and generate a new one in the background.
@@ -65,7 +67,7 @@ function check_dh_group {
         if [[ "$PREGEN_HASH" != "$CURRENT_HASH" ]]; then
             # There is already a dhparam, and it's not the default
             set_ownership_and_permissions "$DHPARAM_FILE"
-            echo "Info: Custom Diffie-Hellman group found, generation skipped."
+            log --info "Custom Diffie-Hellman group found, generation skipped."
             return 0
           fi
 
@@ -75,9 +77,8 @@ function check_dh_group {
         fi
     fi
 
-    echo "Info: Creating Diffie-Hellman group in the background."
-    echo "A pre-generated Diffie-Hellman group will be used for now while the new one
-is being created."
+    log --info "creating Diffie-Hellman group in the background." \
+        "A pre-generated Diffie-Hellman group will be used for now while the new one is being created."
 
     # Put the default dhparam file in place so we can start immediately
     cp "$PREGEN_DHPARAM_FILE" "$DHPARAM_FILE"
@@ -88,7 +89,7 @@ is being created."
     (
         (
             nice -n +5 openssl dhparam -out "$DHPARAM_FILE" "$DHPARAM_BITS" 2>&1 \
-            && echo "Info: Diffie-Hellman group creation complete, reloading nginx." \
+            && log --info "Diffie-Hellman group creation complete, reloading nginx." \
             && set_ownership_and_permissions "$DHPARAM_FILE" \
             && reload_nginx
         ) | grep -vE '^[\.+]+'
@@ -105,7 +106,7 @@ function check_default_cert_key {
         # than 3 months / 7776000 seconds (60 x 60 x 24 x 30 x 3).
         check_cert_min_validity /etc/nginx/certs/default.crt 7776000
         cert_validity=$?
-        [[ "$(lc $DEBUG)" == true ]] && echo "Debug: a default certificate with $default_cert_cn is present."
+        log --debug "a default certificate with $default_cert_cn is present."
     fi
 
     # Create a default cert and private key if:
@@ -118,41 +119,37 @@ function check_default_cert_key {
             -newkey rsa:4096 -sha256 -nodes -days 365 \
             -subj "/CN=$cn" \
             -keyout /etc/nginx/certs/default.key.new \
-            -out /etc/nginx/certs/default.crt.new \
+            -out /etc/nginx/certs/default.crt.new 2>&1 | grep -vE '^[\.-+]+' \
         && mv /etc/nginx/certs/default.key.new /etc/nginx/certs/default.key \
         && mv /etc/nginx/certs/default.crt.new /etc/nginx/certs/default.crt
-        echo "Info: a default key and certificate have been created at /etc/nginx/certs/default.key and /etc/nginx/certs/default.crt."
-    elif [[ "$(lc $DEBUG)" == true && "${default_cert_cn:-}" =~ $cn ]]; then
-        echo "Debug: the self generated default certificate is still valid for more than three months. Skipping default certificate creation."
-    elif [[ "$(lc $DEBUG)" == true ]]; then
-        echo "Debug: the default certificate is user provided. Skipping default certificate creation."
+        log --info "a default key and certificate have been created at /etc/nginx/certs/default.key and /etc/nginx/certs/default.crt."
+    elif [[ "${default_cert_cn:-}" =~ $cn ]]; then
+        log --debug "the self generated default certificate is still valid for more than three months. Skipping default certificate creation."
+    else
+        log --debug "the default certificate is user provided. Skipping default certificate creation."
     fi
     set_ownership_and_permissions "/etc/nginx/certs/default.key"
     set_ownership_and_permissions "/etc/nginx/certs/default.crt"
 }
 
-source /app/functions.sh
-
 if [[ "$*" == "/bin/bash /app/start.sh" ]]; then
     acmev2_re='https://acme-.*v02\.api\.letsencrypt\.org/directory'
     if [[ "${ACME_CA_URI:-}" =~ $acmev2_re ]]; then
-        echo "Error: ACME v2 API is not yet supported by simp_le."
-        echo "See https://github.com/zenhack/simp_le/issues/101"
+        log --error "ACME v2 API is not yet supported by simp_le. See https://github.com/zenhack/simp_le/issues/101"
         exit 1
     fi
     check_docker_socket
     if [[ -z "$(get_nginx_proxy_container)" ]]; then
-        echo "Error: can't get nginx-proxy container ID !" >&2
-        echo "Check that you are doing one of the following :" >&2
-        echo -e "\t- Use the --volumes-from option to mount volumes from the nginx-proxy container." >&2
-        echo -e "\t- Set the NGINX_PROXY_CONTAINER env var on the letsencrypt-companion container to the name of the nginx-proxy container." >&2
-        echo -e "\t- Label the nginx-proxy container to use with 'com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy'." >&2
+        log --error "can't get nginx-proxy container ID ! Check that you are doing one of the following:" \
+            "use the --volumes-from option to mount volumes from the nginx-proxy container," \
+            "set the NGINX_PROXY_CONTAINER env var on the letsencrypt-companion container to the name of the nginx-proxy container," \
+            "or label the nginx-proxy container to use with 'com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy'."
         exit 1
     elif [[ -z "$(get_docker_gen_container)" ]] && ! is_docker_gen_container "$(get_nginx_proxy_container)"; then
-        echo "Error: can't get docker-gen container id !" >&2
-        echo "If you are running a three containers setup, check that you are doing one of the following :" >&2
-        echo -e "\t- Set the NGINX_DOCKER_GEN_CONTAINER env var on the letsencrypt-companion container to the name of the docker-gen container." >&2
-        echo -e "\t- Label the docker-gen container to use with 'com.github.jrcs.letsencrypt_nginx_proxy_companion.docker_gen.'" >&2
+        log --error "can't get docker-gen container id !" \
+            "If you are running a three containers setup, check that you are doing one of the following:" \
+            "set the NGINX_DOCKER_GEN_CONTAINER env var on the letsencrypt-companion container to the name of the docker-gen container," \
+            "or label the docker-gen container to use with 'com.github.jrcs.letsencrypt_nginx_proxy_companion.docker_gen.'"
         exit 1
     fi
     check_writable_directory '/etc/nginx/certs'
