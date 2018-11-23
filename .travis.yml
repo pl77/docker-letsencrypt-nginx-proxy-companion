@@ -44,6 +44,7 @@ script:
 
 after_failure:
   - docker logs $NGINX_CONTAINER_NAME
+  - docker logs dhparameters
   - docker logs default_cert
   - docker logs certs_single
   - docker logs certs_san
