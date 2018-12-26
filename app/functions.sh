@@ -139,29 +139,36 @@ function is_docker_gen_container {
 }
 
 function get_docker_gen_container {
-    local docker_gen_cid
+    local cid
+    local -a docker_gen_cids=()
+    local -a docker_gen_cids_tmp=()
 
-    # First try to get the docker-gen container ID from the container label.
-    docker_gen_cid="$(labeled_cid com.github.jrcs.letsencrypt_nginx_proxy_companion.docker_gen)"
+    # First try to get the docker-gen container ID(s) from the container label.
+    for cid in $(labeled_cid com.github.jrcs.letsencrypt_nginx_proxy_companion.docker_gen); do
+      docker_gen_cids_tmp+=("$cid")
+    done
 
     # If the labeled_cid function dit not return anything and the env var is set, use it.
-    if [[ -z "$docker_gen_cid" ]] && [[ -n "${NGINX_DOCKER_GEN_CONTAINER:-}" ]]; then
-        docker_gen_cid="$NGINX_DOCKER_GEN_CONTAINER"
+    if [[ ${#docker_gen_cids_tmp[@]} -lt 1 ]] && [[ -n "${NGINX_DOCKER_GEN_CONTAINER:-}" ]]; then
+        IFS=',' read -r -a docker_gen_cids_tmp <<< "$NGINX_DOCKER_GEN_CONTAINER"
     fi
 
-    # Check if a container ID was found.
-    if [[ -n "$docker_gen_cid" ]]; then
+    for cid in "${docker_gen_cids_tmp[@]}"; do
         # If the found container is a docker-gen container, output its name / ID.
-        if is_docker_gen_container "$docker_gen_cid"; then
-            echo "$docker_gen_cid"
-            return 0
+        if is_docker_gen_container "$cid"; then
+            docker_gen_cids+=("$cid")
         else
-            echo "$(date "+%Y/%m/%d %T") Warning: container $docker_gen_cid should be a docker-gen container but isn't running docker-gen." >&2
+            echo "$(date "+%Y/%m/%d %T") Warning: container $cid should be a docker-gen container but isn't running docker-gen." >&2
         fi
-    fi
+    done
 
     # Return 1 if no suitable container name / ID was found.
-    return 1
+    if [[ ${#docker_gen_cids[@]} -gt 0 ]]; then
+        [[ "${1:-}" != "--quiet" ]] && for cid in "${docker_gen_cids[@]}"; do echo "$cid"; done
+        return 0
+    else
+        return 1
+    fi
 }
 
 function get_nginx_proxy_container {
@@ -193,13 +200,15 @@ function get_nginx_proxy_container {
 
 ## Nginx
 function reload_nginx {
-    local _docker_gen_container=$(get_docker_gen_container)
+    local docker_gen_cid
     local _nginx_proxy_container=$(get_nginx_proxy_container)
 
-    if [[ -n "${_docker_gen_container:-}" ]]; then
+    if get_docker_gen_container --quiet; then
         # Using docker-gen and nginx in separate container
-        echo "Reloading nginx docker-gen (using separate container ${_docker_gen_container})..."
-        docker_kill "${_docker_gen_container}" SIGHUP
+        for docker_gen_cid in $(get_docker_gen_container); do
+          echo "Reloading nginx docker-gen (using separate container $docker_gen_cid)..."
+          docker_kill "$docker_gen_cid" SIGHUP
+        done
 
         if [[ -n "${_nginx_proxy_container:-}" ]]; then
             # Reloading nginx in case only certificates had been renewed
