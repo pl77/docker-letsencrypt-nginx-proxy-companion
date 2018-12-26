@@ -119,19 +119,20 @@ EOF
   # Run a nginx container named nginx-volumes-from, without the nginx_proxy label.
   docker run --rm -d \
     --name "$nginx_vol" \
-    -v /var/run/docker.sock:/tmp/docker.sock:ro \
     nginx:alpine > /dev/null
 
   # Run a nginx container named nginx-env-var, without the nginx_proxy label.
   docker run --rm -d \
     --name "$nginx_env" \
-    -v /var/run/docker.sock:/tmp/docker.sock:ro \
     nginx:alpine > /dev/null
 
-  # Spawn a "fake docker-gen" container named docker-gen-nolabel, without the docker_gen label.
-  docker run --rm -d \
+  # Spawn a docker-gen container named docker-gen-nolabel, without the docker_gen label.
+  (docker run --rm -d \
     --name "$docker_gen" \
-    nginx:alpine > /dev/null
+    -v /var/run/docker.sock:/tmp/docker.sock:ro \
+    -v ${TRAVIS_BUILD_DIR}/nginx.tmpl:/etc/docker-gen/templates/nginx.tmpl:ro \
+    jwilder/docker-gen \
+    -watch /etc/docker-gen/templates/nginx.tmpl /etc/docker-gen/nginx.conf) > /dev/null
 
   # This should target the nginx container whose id or name was obtained with
   # the --volumes-from argument (nginx-volumes-from)
@@ -188,11 +189,14 @@ EOF
 
   docker stop "$nginx_lbl" > /dev/null
 
-  # Spawn a "fake docker-gen" container named docker-gen-label, with the docker_gen label.
+  # Spawn a docker-gen container named docker-gen-label, with the docker_gen label.
   labeled_docker_gen_cid="$(docker run --rm -d \
     --name "$docker_gen_lbl" \
     --label com.github.jrcs.letsencrypt_nginx_proxy_companion.docker_gen \
-    nginx:alpine)"
+    -v /var/run/docker.sock:/tmp/docker.sock:ro \
+    -v ${TRAVIS_BUILD_DIR}/nginx.tmpl:/etc/docker-gen/templates/nginx.tmpl:ro \
+    jwilder/docker-gen \
+    -watch /etc/docker-gen/templates/nginx.tmpl /etc/docker-gen/nginx.conf)"
 
   # This should target the nginx container whose id or name was obtained with
   # the --volumes-from argument (nginx-volumes-from)

@@ -139,16 +139,29 @@ function is_docker_gen_container {
 }
 
 function get_docker_gen_container {
+    local docker_gen_cid
+
     # First try to get the docker-gen container ID from the container label.
-    local docker_gen_cid="$(labeled_cid com.github.jrcs.letsencrypt_nginx_proxy_companion.docker_gen)"
+    docker_gen_cid="$(labeled_cid com.github.jrcs.letsencrypt_nginx_proxy_companion.docker_gen)"
 
     # If the labeled_cid function dit not return anything and the env var is set, use it.
     if [[ -z "$docker_gen_cid" ]] && [[ -n "${NGINX_DOCKER_GEN_CONTAINER:-}" ]]; then
         docker_gen_cid="$NGINX_DOCKER_GEN_CONTAINER"
     fi
 
-    # If a container ID was found, output it. The function will return 1 otherwise.
-    [[ -n "$docker_gen_cid" ]] && echo "$docker_gen_cid"
+    # Check if a container ID was found.
+    if [[ -n "$docker_gen_cid" ]]; then
+        # If the found container is a docker-gen container, output its name / ID.
+        if is_docker_gen_container "$docker_gen_cid"; then
+            echo "$docker_gen_cid"
+            return 0
+        else
+            echo "$(date "+%Y/%m/%d %T") Warning: container $docker_gen_cid should be a docker-gen container but isn't running docker-gen." >&2
+        fi
+    fi
+
+    # Return 1 if no suitable container name / ID was found.
+    return 1
 }
 
 function get_nginx_proxy_container {
