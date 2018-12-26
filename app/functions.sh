@@ -131,7 +131,7 @@ function labeled_cid {
 
 function is_docker_gen_container {
     local id="${1?missing id}"
-    if [[ $(docker_api "/containers/$id/json" | jq -r '.Config.Env[]' | egrep -c '^DOCKER_GEN_VERSION=') = "1" ]]; then
+    if docker_api "/containers/$id/top" | jq -r '.Processes[]' | egrep -q 'docker-gen'; then
         return 0
     else
         return 1
