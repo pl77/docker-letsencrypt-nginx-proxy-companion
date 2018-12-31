@@ -3,12 +3,9 @@
 
 set -u
 
-function check_deprecated_env_var {
-    if [[ -n "${ACME_TOS_HASH:-}" ]]; then
-        echo "Info: the ACME_TOS_HASH environment variable is no longer used by simp_le and has been deprecated."
-        echo "simp_le now implicitly agree to the ACME CA ToS."
-    fi
-}
+if [[ ${DEBUG:-} == true ]]; then
+  DEBUG=1 && export DEBUG
+fi
 
 function check_docker_socket {
     if [[ $DOCKER_HOST == unix://* ]]; then
@@ -91,7 +88,7 @@ is being created."
             && reload_nginx
         ) | grep -vE '^[\.+]+'
         rm "$GEN_LOCKFILE"
-    ) &disown
+    ) & disown
 }
 
 function check_default_cert_key {
@@ -103,7 +100,7 @@ function check_default_cert_key {
         # than 3 months / 7776000 seconds (60 x 60 x 24 x 30 x 3).
         check_cert_min_validity /etc/nginx/certs/default.crt 7776000
         cert_validity=$?
-        [[ "$(lc $DEBUG)" == true ]] && echo "Debug: a default certificate with $default_cert_cn is present."
+        [[ ${DEBUG:-} == 1 ]] && echo "Debug: a default certificate with $default_cert_cn is present."
     fi
 
     # Create a default cert and private key if:
@@ -120,24 +117,37 @@ function check_default_cert_key {
         && mv /etc/nginx/certs/default.key.new /etc/nginx/certs/default.key \
         && mv /etc/nginx/certs/default.crt.new /etc/nginx/certs/default.crt
         echo "Info: a default key and certificate have been created at /etc/nginx/certs/default.key and /etc/nginx/certs/default.crt."
-    elif [[ "$(lc $DEBUG)" == true && "${default_cert_cn:-}" =~ $cn ]]; then
+    elif [[ ${DEBUG:-} == 1 && "${default_cert_cn:-}" =~ $cn ]]; then
         echo "Debug: the self generated default certificate is still valid for more than three months. Skipping default certificate creation."
-    elif [[ "$(lc $DEBUG)" == true ]]; then
+    elif [[ ${DEBUG:-} == 1 ]]; then
         echo "Debug: the default certificate is user provided. Skipping default certificate creation."
     fi
     set_ownership_and_permissions "/etc/nginx/certs/default.key"
     set_ownership_and_permissions "/etc/nginx/certs/default.crt"
 }
 
+function configure_default_email {
+    # Configure the email used by the default config
+    [[ -d /etc/acme.sh/default ]] || mkdir -p /etc/acme.sh/default
+    if [[ -f /etc/acme.sh/default/account.conf ]]; then
+        if [[ -f /etc/acme.sh/default/ca/acme-v01.api.letsencrypt.org/account.json ]]; then
+            acme.sh --update-account --accountemail "${DEFAULT_EMAIL:-}"
+            return 0
+        elif grep -q ACCOUNT_EMAIL /etc/acme.sh/default/account.conf; then
+            if grep -q "${DEFAULT_EMAIL:-}" /etc/acme.sh/default/account.conf; then
+                return 0
+            else
+                sed -i "s/^ACCOUNT_EMAIL=.*$/ACCOUNT_EMAIL='${DEFAULT_EMAIL:-}'/g" /etc/acme.sh/default/account.conf
+                return 0
+            fi
+        fi
+    fi
+    echo "ACCOUNT_EMAIL='${DEFAULT_EMAIL:-}'" >> /etc/acme.sh/default/account.conf
+}
+
 source /app/functions.sh
 
 if [[ "$*" == "/bin/bash /app/start.sh" ]]; then
-    acmev2_re='https://acme-.*v02\.api\.letsencrypt\.org/directory'
-    if [[ "${ACME_CA_URI:-}" =~ $acmev2_re ]]; then
-        echo "Error: ACME v2 API is not yet supported by simp_le."
-        echo "See https://github.com/zenhack/simp_le/issues/101"
-        exit 1
-    fi
     check_docker_socket
     if [[ -z "$(get_self_cid)" ]]; then
         echo "Error: can't get my container ID !" >&2
@@ -161,11 +171,12 @@ if [[ "$*" == "/bin/bash /app/start.sh" ]]; then
     fi
     check_writable_directory '/etc/nginx/certs'
     check_writable_directory '/etc/nginx/vhost.d'
+    check_writable_directory '/etc/acme.sh'
     check_writable_directory '/usr/share/nginx/html'
-    check_deprecated_env_var
     check_default_cert_key
     check_dh_group
     reload_nginx
+    [[ -n ${DEFAULT_EMAIL:-} ]] && configure_default_email
 fi
 
 exec "$@"
