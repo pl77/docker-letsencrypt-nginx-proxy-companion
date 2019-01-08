@@ -187,17 +187,6 @@ $ docker exec nginx-letsencrypt /app/cert_status
 
 As for the forced renewal command, replace `nginx-letsencrypt` with the name of your letsencrypt-nginx-proxy-companion container.
 
-##### ACME account keys
-By default the container will save the first ACME account key created for each ACME API endpoint used, and will reuse it for all subsequent authorizations and issuances requests made to this endpoint. This behavior is enabled by default to avoid running into Let's Encrypt account [rate limits](https://letsencrypt.org/docs/rate-limits/).
-
-For instance, when using the default Let's Encrypt production endpoint, the container will save the first account key created for this endpoint as `/etc/nginx/certs/accounts/acme-v01.api.letsencrypt.org/directory/default.json` and will reuse it for future requests made to this endpoint.
-
-If required, you can use multiple accounts for the same ACME API endpoint by using the `LETSENCRYPT_ACCOUNT_ALIAS` environment variable on your proxyed container. This instruct the letsencrypt_nginx_proxy_companion container to look for an account key named after the provided alias instead of `default.json`. For example, `LETSENCRYPT_ACCOUNT_ALIAS=client1` will use the key named `client1.json` in the corresponding ACME API endpoint folder for this proxyed container (or will create it if it does not exists yet).
-
-Please see the **One Account or Many?** paragraph on [Let's Encrypt Integration Guide](https://letsencrypt.org/docs/integration-guide/) for additional informations.
-
-If you want to disable the account key reutilization entirely, you can set the environment variable `REUSE_ACCOUNT_KEYS` to `false` on the letsencrypt_nginx_proxy_companion container. This creates a new ACME registration with a corresponding account key for each new certificate issuance. Note that this won't create new account keys for certs already issued before `REUSE_ACCOUNT_KEYS` is set to `false`. This is not recommended unless you have specific reasons to do so.
-
 #### Optional container environment variables
 
 Optional letsencrypt-nginx-proxy-companion container environment variables for custom configuration.
@@ -215,11 +204,9 @@ $ docker run -d \
     jrcs/letsencrypt-nginx-proxy-companion
 ```
 
-* `DEBUG` - Set it to `true` to enable debugging of the entrypoint script and generation of LetsEncrypt certificates, which could help you pin point any configuration issues.
+* `DEBUG` - Set it to `1` to enable debugging of the entrypoint script and generation of LetsEncrypt certificates, which could help you pin point any configuration issues.
 
-* `REUSE_ACCOUNT_KEYS` - Set it to `false` to disable the account keys reutilization (see [ACME account keys](#acme-account-keys)).
-
-* `REUSE_PRIVATE_KEYS` - Set it to `true` to make simp_le reuse previously generated private key for each certificate instead of creating a new one on certificate renewal. Recommended if you intend to use HPKP.
+* `RENEW_PRIVATE_KEYS` - Set it to `false` to make simp_le reuse previously generated private key for each certificate instead of creating a new one on certificate renewal. Recommended if you intend to use HPKP.
 
 * The `com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy` label - set this label on the nginx-proxy container to tell the docker-letsencrypt-nginx-proxy-companion container to use it as the proxy.
 
