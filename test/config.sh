@@ -7,6 +7,7 @@ testAlias+=(
 
 imageTests+=(
 	[le-companion]='
+	logging
 	docker_api
 	default_cert
 	certs_single

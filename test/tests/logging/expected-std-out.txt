@@ -1,0 +1,60 @@
+LOG_LEVEL=1
+Error: this is an error message.
+LOG_LEVEL=error
+Error: this is an error message.
+LOG_LEVEL=Error
+Error: this is an error message.
+LOG_LEVEL=2
+Error: this is an error message.
+Warning: this is a warning message.
+LOG_LEVEL=warning
+Error: this is an error message.
+Warning: this is a warning message.
+LOG_LEVEL=Warning
+Error: this is an error message.
+Warning: this is a warning message.
+LOG_LEVEL=3
+Error: this is an error message.
+Warning: this is a warning message.
+Info: this is an info message.
+LOG_LEVEL=info
+Error: this is an error message.
+Warning: this is a warning message.
+Info: this is an info message.
+LOG_LEVEL=Info
+Error: this is an error message.
+Warning: this is a warning message.
+Info: this is an info message.
+LOG_LEVEL=4
+Error: this is an error message.
+Warning: this is a warning message.
+Info: this is an info message.
+Debug: this is a debug message.
+LOG_LEVEL=debug
+Error: this is an error message.
+Warning: this is a warning message.
+Info: this is an info message.
+Debug: this is a debug message.
+LOG_LEVEL=Debug
+Error: this is an error message.
+Warning: this is a warning message.
+Info: this is an info message.
+Debug: this is a debug message.
+DEBUG=true
+Error: this is an error message.
+Warning: this is a warning message.
+Info: this is an info message.
+Debug: this is a debug message.
+DEBUG=True
+Error: this is an error message.
+Warning: this is a warning message.
+Info: this is an info message.
+Debug: this is a debug message.
+LOG_LEVEL=incorrect_value
+Error: this is an error message.
+Warning: this is a warning message.
+Info: this is an info message.
+no environment variable
+Error: this is an error message.
+Warning: this is a warning message.
+Info: this is an info message.
