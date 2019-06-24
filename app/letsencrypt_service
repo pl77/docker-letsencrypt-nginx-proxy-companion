@@ -130,6 +130,7 @@ function update_certs {
     source /app/letsencrypt_service_data
 
     should_reload_nginx='false'
+    containers_to_restart=()
     for cid in "${LETSENCRYPT_CONTAINERS[@]}"; do
         should_restart_container='false'
         # Derive host and email variable names
@@ -283,8 +284,7 @@ function update_certs {
         # Restart container if certs are updated and the respective environmental variable is set
         restart_container_var="LETSENCRYPT_${cid}_RESTART_CONTAINER"
         if [[ $(lc "${!restart_container_var:-}") == true ]] && [[ "$should_restart_container" == 'true' ]]; then
-            echo "Restarting container (${cid})..."
-            docker_restart "${cid}"
+            containers_to_restart+=("${cid}")
         fi
 
     done
@@ -292,6 +292,11 @@ function update_certs {
     cleanup_links && should_reload_nginx='true'
 
     [[ "$should_reload_nginx" == 'true' ]] && reload_nginx
+
+    for cid in "${containers_to_restart[@]}"; do
+      echo "Restarting container (${cid})..."
+      docker_restart "${cid}"
+    done
 }
 
 # Allow the script functions to be sourced without starting the Service Loop.
